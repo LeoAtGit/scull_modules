@@ -3,3 +3,7 @@
 *.ko
 *.mod.c
 *.o
+*.swp
+*.cmd
+scull/.tmp_versions/
+

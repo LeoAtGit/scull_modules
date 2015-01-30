@@ -20,10 +20,24 @@ struct file_operations scull_fops = {
 	.owner = THIS_MODULE,
 	//.read = scull_read,
 	//.write = scull_write,
-//	.open = scull_open,
-	.open = NULL,
-	//.release = scull_release,
+	.open = scull_open,
+	.release = scull_release,
 };
+
+static int scull_open(struct inode *inode, struct file *filp)
+{
+	struct scull_device *dev;
+
+	dev = container_of(inode->i_cdev, struct scull_dev, cdev);
+	filp->private_data = dev;
+
+	return 0;
+}
+
+static void scull_release(struct inode *inode, struct file *filp)
+{
+	return 0;
+}
 
 static void scull_cdev_init(struct scull_device *dev)
 {
