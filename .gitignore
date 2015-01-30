@@ -5,5 +5,5 @@
 *.o
 *.swp
 *.cmd
-scull/.tmp_versions/
+.tmp_versions/
 
