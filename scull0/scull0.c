@@ -72,6 +72,7 @@ void scull_cdev_init(struct scull_device *dev)
 	printk(KERN_NOTICE "entered scull_cdev_init\n");
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
+	dev->data = NULL;
 	//dev->cdev.ops = &scull_fops  /* TODO check if I even need this line */
 	
 	err_code = cdev_add(&dev->cdev, dev_num, 1);
@@ -84,7 +85,7 @@ void scull_cdev_del(struct scull_device *dev)
 	printk(KERN_NOTICE "entered scull_cdev_del\n");
 	printk(KERN_ERR "[DEBUG] we are now in scull_cdev_del\n");
 
-	if (dev->data != NULL)
+	if (dev->data)
 		kfree(dev->data);
 
 	printk(KERN_ERR "[DEBUG] I could free dev->data without a segfault\n");
