@@ -29,6 +29,7 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	struct scull_device *dev = filp->private_data;
 	ssize_t ret = 0;
 
+	printk(KERN_NOTICE "entered scull_read\n");
 	//if (*f_pos >= dev->size) /* Check how the size is implemented */
 	
 	if (dev->data)/*Each time this "read" is called we allocate a new pointer */
@@ -51,6 +52,7 @@ int scull_open(struct inode *inode, struct file *filp)
 {
 	struct scull_device *dev;
 
+	printk(KERN_NOTICE "entered scull_open\n");
 	dev = container_of(inode->i_cdev, struct scull_device, cdev);
 	filp->private_data = dev;
 
@@ -59,6 +61,7 @@ int scull_open(struct inode *inode, struct file *filp)
 
 int scull_release(struct inode *inode, struct file *filp)
 {
+	printk(KERN_NOTICE "entered scull_release\n");
 	return 0;
 }
 
@@ -66,6 +69,7 @@ void scull_cdev_init(struct scull_device *dev)
 {
 	int err_code = 0;
 
+	printk(KERN_NOTICE "entered scull_cdev_init\n");
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
 	//dev->cdev.ops = &scull_fops  /* TODO check if I even need this line */
@@ -77,9 +81,17 @@ void scull_cdev_init(struct scull_device *dev)
 
 void scull_cdev_del(struct scull_device *dev)
 {
-	if (dev->data)
+	printk(KERN_NOTICE "entered scull_cdev_del\n");
+	printk(KERN_ERR "[DEBUG] we are now in scull_cdev_del\n");
+
+	if (dev->data != NULL)
 		kfree(dev->data);
+
+	printk(KERN_ERR "[DEBUG] I could free dev->data without a segfault\n");
+
 	cdev_del(&dev->cdev);
+
+	return;
 }
 
 int scull_init(void)
@@ -87,6 +99,7 @@ int scull_init(void)
 	int err = 0;
 	struct cdev *scull_cdev;
 
+	printk(KERN_NOTICE "entered scull_init\n");
 	printk(KERN_DEBUG "Attempting to load the module\n");
 
 	err = alloc_chrdev_region(&dev_num, scull_minor, 1, "scull");
@@ -111,9 +124,15 @@ int scull_init(void)
 
 void scull_clean_up(void)
 {
+	printk(KERN_NOTICE "entered scull_clean_up\n");
 	scull_cdev_del(scull_device);
+
+	printk(KERN_ERR "[DEBUG] scull_cdev_del executed correctly\n");
+
 	if (scull_device)
 		kfree(scull_device);
+
+	printk(KERN_ERR "[DEBUG] kfreed the scull_device global variable\n");
 
 	unregister_chrdev_region(dev_num, 1);
 
