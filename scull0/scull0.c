@@ -19,7 +19,7 @@ struct scull_device *scull_device;
 struct file_operations scull_fops = {
 	.owner = THIS_MODULE,
 	.read = scull_read,
-	//.write = scull_write,
+	.write = scull_write,
 	.open = scull_open,
 	.release = scull_release,
 };
@@ -32,16 +32,48 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	printk(KERN_NOTICE "entered scull_read\n");
 	//if (*f_pos >= dev->size) /* Check how the size is implemented */
 	
-	if (dev->data)/*Each time this "read" is called we allocate a new pointer */
-		kfree(dev->data);
+	if (!dev->data) /* if this is NULL then dont allocate any space */
+		goto out;
 
-	dev->data = kmalloc(101, GFP_KERNEL);//allocate an abritrary number of bytes
+	if (count > dev->size)
+		count = dev->size;
 
-	if (copy_to_user(buf, dev->data, 100)){ // see previous magic number
+	if (copy_to_user(buf, dev->data, count)){ 
 		ret = -EFAULT;
 		goto out;
 	}
-	*f_pos += 100; // see previous magic number
+
+	*f_pos += count; 
+	ret = count;
+
+out:
+	return ret;
+}
+
+ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos)
+{
+	struct scull_device *dev = filp->private_data;
+	ssize_t ret = 0;
+
+	printk(KERN_NOTICE "entered scull_write\n");
+
+	if (dev->data)
+		kfree(dev->data);
+
+	dev->data = kmalloc(count * sizeof(char), GFP_KERNEL);
+	if (!dev->data){
+		ret = -ENOMEM;
+		goto out;
+	}
+	memset(dev->data, 0, count * sizeof(char));
+	dev->size = count;
+
+	if (copy_from_user(dev->data, buf, count)){
+		ret = -EFAULT;
+		goto out;
+	}
+
+	*f_pos += count;
 	ret = count;
 
 out:
@@ -73,6 +105,7 @@ void scull_cdev_init(struct scull_device *dev)
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
 	dev->data = NULL;
+	dev->size = 0;
 	//dev->cdev.ops = &scull_fops  /* TODO check if I even need this line */
 	
 	err_code = cdev_add(&dev->cdev, dev_num, 1);
@@ -126,6 +159,7 @@ int scull_init(void)
 void scull_clean_up(void)
 {
 	printk(KERN_NOTICE "entered scull_clean_up\n");
+
 	scull_cdev_del(scull_device);
 
 	printk(KERN_ERR "[DEBUG] scull_cdev_del executed correctly\n");

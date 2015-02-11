@@ -8,7 +8,7 @@
 
 struct scull_device {
 	void *data;	    /* Pointer to some abitrary data */
-	//unsigned long size; /* Amount of data stored in here */
+	unsigned long size; /* Amount of data stored in here */
 	struct cdev cdev;   /* Char device structure */
 };
 
@@ -21,6 +21,8 @@ int scull_init(void);
 void scull_clean_up(void);
 
 ssize_t scull_read(struct file *, char *, size_t count, loff_t *);
+
+ssize_t scull_write(struct file *, const char *, size_t count, loff_t *);
 
 int scull_open(struct inode *, struct file *);
 
