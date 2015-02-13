@@ -14,7 +14,8 @@ int scull_minor = 0;
 
 int dev_num = 0; /* The number of the device */
 
-struct scull_device *scull_device;
+struct scull_device *scull_device = NULL;
+//struct data_set *first_data_set = NULL;
 
 struct file_operations scull_fops = {
 	.owner = THIS_MODULE,
@@ -38,9 +39,11 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	if (count > dev->size)
 		count = dev->size;
 
-	if (copy_to_user(buf, dev->data, count)){ 
-		ret = -EFAULT;
-		goto out;
+	while(dev->data->next_node){
+		if (copy_to_user(buf, dev->data->data, (count > dev->data->size) ? dev->data->size : count)){ 
+			ret = -EFAULT;
+			goto out;
+		}
 	}
 
 	*f_pos += count; 
@@ -53,25 +56,62 @@ out:
 ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos)
 {
 	struct scull_device *dev = filp->private_data;
+	struct data_set *d_set = dev->data;
+	void *buffer = NULL;
 	ssize_t ret = 0;
 
 	printk(KERN_NOTICE "entered scull_write\n");
 
-	if (dev->data)
-		kfree(dev->data);
+	if (!d_set){
+		printk("WTF WHY IS THIS A FUKCING NULL POINTER OMFG\n");
+		return -1;
+	}
 
-	dev->data = kmalloc(count * sizeof(char), GFP_KERNEL);
-	if (!dev->data){
+	printk(KERN_NOTICE "line 65\n");
+
+	while(d_set->next_node != NULL){
+		printk(KERN_NOTICE "line 67\n");
+		buffer = (void *) d_set;
+		printk(KERN_NOTICE "line 69\n");
+		d_set = d_set->next_node;
+		printk(KERN_NOTICE "line 71\n");
+	}
+
+	printk(KERN_NOTICE "line 70\n");
+
+	/*if (d_set->data)
+		kfree(d_set->data);
+*/
+	if (scull_device->data->data)
+		kfree(scull_device->data->data);
+
+	printk(KERN_NOTICE "line 75\n");
+
+	d_set->data = kmalloc(count * sizeof(char), GFP_KERNEL);
+	if (buffer){
+		d_set->prev_node = (struct data_set *) buffer;
+		d_set->prev_node->next_node = d_set;
+	}
+
+	printk(KERN_NOTICE "line 83\n");
+
+	if (!d_set->data){
 		ret = -ENOMEM;
 		goto out;
 	}
-	memset(dev->data, 0, count * sizeof(char));
-	dev->size = count;
+	memset(d_set->data, 0, count * sizeof(char));
+	dev->size += count;
 
-	if (copy_from_user(dev->data, buf, count)){
+	printk(KERN_NOTICE "line 92\n");
+
+	if (copy_from_user(d_set->data, buf, count)){
 		ret = -EFAULT;
 		goto out;
 	}
+
+	printk(KERN_NOTICE "line 99\n");
+
+	d_set->size = count;
 
 	*f_pos += count;
 	ret = count;
@@ -119,7 +159,7 @@ void scull_cdev_del(struct scull_device *dev)
 	printk(KERN_ERR "[DEBUG] we are now in scull_cdev_del\n");
 
 	if (dev->data)
-		kfree(dev->data);
+		delete_linked_list();
 
 	printk(KERN_ERR "[DEBUG] I could free dev->data without a segfault\n");
 
@@ -128,13 +168,48 @@ void scull_cdev_del(struct scull_device *dev)
 	return;
 }
 
+void delete_linked_list()
+{
+	struct data_set *crawler = scull_device->data;
+	void *buffer = NULL;
+
+	printk(KERN_NOTICE "entered delete_linked_list");
+
+	if (!crawler && scull_device->size){
+		printk(KERN_ERR "ERROR: couldnt get the data pointer");
+		return;
+	}
+
+	while(crawler->next_node){
+		crawler = crawler->next_node;
+	}
+
+	while(crawler->prev_node){
+		buffer = (void*) crawler->prev_node;
+		if (crawler->data){
+			kfree(crawler->data);
+		}
+		kfree(crawler);
+
+		crawler = (struct data_set *) buffer;
+	}
+}
+
 int scull_init(void)
 {
 	int err = 0;
 	struct cdev *scull_cdev;
+	struct data_set *first_data_set;
 
 	printk(KERN_NOTICE "entered scull_init\n");
 	printk(KERN_DEBUG "Attempting to load the module\n");
+
+	first_data_set = kmalloc(sizeof(data_set), GFP_KERNEL);
+	if (!first_data_set)
+		return -ENOMEM;
+	first_data_set->data = NULL;
+	first_data_set->prev_node = NULL;
+	first_data_set->next_node = NULL;
 
 	err = alloc_chrdev_region(&dev_num, scull_minor, 1, "scull");
 	if (err)
@@ -147,8 +222,8 @@ int scull_init(void)
 		return -ENOMEM;
 
 	scull_cdev = cdev_alloc();
-	//my_chdev->ops = &scull_fops; /* TODO Check if i need this line */
 	scull_device->cdev = *scull_cdev;
+	scull_device->data = first_data_set;
 
 	scull_cdev_init(scull_device);
 
@@ -159,6 +234,8 @@ int scull_init(void)
 void scull_clean_up(void)
 {
 	printk(KERN_NOTICE "entered scull_clean_up\n");
+
+//	delete_linked_list();
 
 	scull_cdev_del(scull_device);
 
