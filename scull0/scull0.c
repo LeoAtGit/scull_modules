@@ -9,13 +9,15 @@
 
 #include "scull0.h"
 
+static char *test_string = "This is the test string";
+
 int scull_major = 0;
 int scull_minor = 0;
 
 int dev_num = 0; /* The number of the device */
 
 struct scull_device *scull_device = NULL;
-//struct data_set *first_data_set = NULL;
+struct data_set *first_data_set = NULL;
 
 struct file_operations scull_fops = {
 	.owner = THIS_MODULE,
@@ -28,24 +30,45 @@ struct file_operations scull_fops = {
 ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
 	struct scull_device *dev = filp->private_data;
+	struct data_set *crawler = NULL;
 	ssize_t ret = 0;
 
 	printk(KERN_NOTICE "entered scull_read\n");
 	//if (*f_pos >= dev->size) /* Check how the size is implemented */
 	
-	if (!dev->data) /* if this is NULL then dont allocate any space */
+	if (!dev->data) /* if this is NULL then read nothing */
 		goto out;
 
 	if (count > dev->size)
 		count = dev->size;
 
-	while(dev->data->next_node){
+	crawler = dev->data;
+	if (!crawler){
+		printk(KERN_ERR "The crawler in the read function is a null pointer\n");
+		goto out;
+	}
+
+	while(crawler->next_node){
+		if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
+			ret = -EFAULT;
+			goto out;
+		}
+
+		crawler = crawler->next_node;
+	}
+
+	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
+		ret = -EFAULT;
+		goto out;
+	}
+
+/*	while(dev->data->next_node){
 		if (copy_to_user(buf, dev->data->data, (count > dev->data->size) ? dev->data->size : count)){ 
 			ret = -EFAULT;
 			goto out;
 		}
 	}
-
+*/
 	*f_pos += count; 
 	ret = count;
 
@@ -57,21 +80,34 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 {
 	struct scull_device *dev = filp->private_data;
 	struct data_set *d_set = dev->data;
+	struct data_set *new_data = NULL;
 	void *buffer = NULL;
 	ssize_t ret = 0;
 
+	printk(KERN_NOTICE "dev:   %p\n", dev);
+	printk(KERN_NOTICE "d_set: %p\n", d_set);
+
 	printk(KERN_NOTICE "entered scull_write\n");
 
-	if (!d_set){
-		printk("WTF WHY IS THIS A FUKCING NULL POINTER OMFG\n");
-		return -1;
+	if (d_set == NULL){
+		// first time writing to the device
+		/*d_set = kmalloc(sizeof(data_set), GFP_KERNEL);
+		if (!d_set){
+			printk(KERN_ERR "Couldnt alloc memory for the first data\n");
+			ret = -ENOMEM;
+			goto out;
+		}*/
+		printk(KERN_ERR "This shouldnt happen, the first data set is empty\n");
+		ret = -EFAULT;
+		goto out;
 	}
 
 	printk(KERN_NOTICE "line 65\n");
 
 	while(d_set->next_node != NULL){
 		printk(KERN_NOTICE "line 67\n");
-		buffer = (void *) d_set;
+		//buffer = (void *) d_set;
+		buffer = &d_set;
 		printk(KERN_NOTICE "line 69\n");
 		d_set = d_set->next_node;
 		printk(KERN_NOTICE "line 71\n");
@@ -79,39 +115,38 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 
 	printk(KERN_NOTICE "line 70\n");
 
-	/*if (d_set->data)
-		kfree(d_set->data);
-*/
-	if (scull_device->data->data)
-		kfree(scull_device->data->data);
+	new_data = kmalloc(sizeof(data_set), GFP_KERNEL);
+	if (!new_data){
+		printk(KERN_ERR "Couldnt allocate space for the new data set\n");
+		ret = -ENOMEM;
+		goto out;
+	}
 
-	printk(KERN_NOTICE "line 75\n");
-
-	d_set->data = kmalloc(count * sizeof(char), GFP_KERNEL);
+	new_data->data = kmalloc(count * sizeof(char), GFP_KERNEL);
 	if (buffer){
-		d_set->prev_node = (struct data_set *) buffer;
-		d_set->prev_node->next_node = d_set;
+		new_data->prev_node = d_set;
+		d_set->next_node = new_data;
 	}
 
 	printk(KERN_NOTICE "line 83\n");
 
-	if (!d_set->data){
+	if (!new_data->data){
 		ret = -ENOMEM;
 		goto out;
 	}
-	memset(d_set->data, 0, count * sizeof(char));
+	memset(new_data->data, 0, count * sizeof(char));
 	dev->size += count;
 
 	printk(KERN_NOTICE "line 92\n");
 
-	if (copy_from_user(d_set->data, buf, count)){
+	if (copy_from_user(new_data->data, buf, count)){
 		ret = -EFAULT;
 		goto out;
 	}
 
 	printk(KERN_NOTICE "line 99\n");
 
-	d_set->size = count;
+	new_data->size = count;
 
 	*f_pos += count;
 	ret = count;
@@ -144,7 +179,6 @@ void scull_cdev_init(struct scull_device *dev)
 	printk(KERN_NOTICE "entered scull_cdev_init\n");
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
-	dev->data = NULL;
 	dev->size = 0;
 	//dev->cdev.ops = &scull_fops  /* TODO check if I even need this line */
 	
@@ -199,7 +233,7 @@ int scull_init(void)
 {
 	int err = 0;
 	struct cdev *scull_cdev;
-	struct data_set *first_data_set;
+//	struct data_set *first_data_set;
 
 	printk(KERN_NOTICE "entered scull_init\n");
 	printk(KERN_DEBUG "Attempting to load the module\n");
@@ -207,7 +241,8 @@ int scull_init(void)
 	first_data_set = kmalloc(sizeof(data_set), GFP_KERNEL);
 	if (!first_data_set)
 		return -ENOMEM;
-	first_data_set->data = NULL;
+	first_data_set->data = test_string;
+	first_data_set->size = sizeof(test_string);
 	first_data_set->prev_node = NULL;
 	first_data_set->next_node = NULL;
 
