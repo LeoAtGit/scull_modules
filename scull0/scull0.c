@@ -9,7 +9,7 @@
 
 #include "scull0.h"
 
-static char *test_string = "This is the test string";
+char *test_string = "This is the test string";
 
 int scull_major = 0;
 int scull_minor = 0;
@@ -33,6 +33,10 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	struct scull_device *dev = scull_device;
 	struct data_set *crawler = NULL;
 	ssize_t ret = 0;
+	int orig_count = count;
+	int temp_count = 0;
+	char *collected_data = NULL;
+	int size_of_collected_data = 0;
 
 	printk(KERN_NOTICE "entered scull_read\n");
 	
@@ -41,24 +45,41 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 		printk(KERN_ERR "The crawler in the read function is a null pointer\n");
 		goto out;
 	}
+	
+	printk(KERN_NOTICE "count == %d\n", count);
 
 	if (count > dev->size)
 		count = dev->size;
 
-	/*TODO while(crawler->next_node){
-		if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
-			ret = -EFAULT;
-			goto out;
+	printk(KERN_NOTICE "count == %d\n", count);
+
+	collected_data = kmalloc(count * sizeof(char), GFP_KERNEL);
+	if (!collected_data){
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	while(crawler->next_node){
+		if (count > crawler->size){
+			temp_count = crawler->size;
+			count -= temp_count;
 		}
+
+		strcat(collected_data, crawler->data); //TODO error checking, strcat
+
+		//printk(KERN_NOTICE "count == %d\n", count);
+		printk(KERN_NOTICE "crawler->data == %p", crawler->data);
+		printk(KERN_NOTICE "crawler->data == %s", crawler->data);
 
 		crawler = crawler->next_node;
 	}
 
-	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
+	if (copy_to_user(buf, collected_data, count)){
 		ret = -EFAULT;
 		goto out;
-	}*/
-	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
+	}
+	
+	/*DEBUG FIRST TWO NODES if (copy_to_user(buf, crawler->data, temp_count)){
 		ret = -EFAULT;
 		goto out;
 	}
@@ -71,13 +92,23 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	if (crawler->next_node)
 		crawler = crawler->next_node;
 
-	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
-		ret = -EFAULT;
-		goto out;
+	if (count > crawler->size){
+		temp_count = crawler->size;
+		count -= temp_count;
 	}
 
-	*f_pos += count; 
-	ret = count;
+	printk(KERN_NOTICE "crawler           :   %p\n", crawler);
+	printk(KERN_NOTICE "crawler->data     :   %p\n", crawler->data);
+	printk(KERN_NOTICE "crawler->prev_node:   %p\n", crawler->prev_node);
+	printk(KERN_NOTICE "crawler->next_node:   %p\n", crawler->next_node);
+
+	if (copy_to_user(buf, crawler->data, temp_count)){
+		ret = -EFAULT;
+		goto out;
+	}*/
+
+	*f_pos += orig_count; 
+	ret = orig_count;
 
 out:
 	return ret;
@@ -89,7 +120,6 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 	struct scull_device *dev = scull_device;
 	struct data_set *d_set = dev->data;
 	struct data_set *new_data = NULL;
-	void *buffer = NULL;
 	ssize_t ret = 0;
 
 	printk(KERN_NOTICE "dev:   %p\n", dev);
@@ -112,8 +142,9 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 
 	printk(KERN_NOTICE "line 65\n");
 
-	while(d_set->next_node != NULL){
-		buffer = &d_set;
+	printk(KERN_NOTICE "value of d_set->next_node: %p\n", d_set->next_node);
+	while(d_set->next_node){
+		printk(KERN_ERR "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR\n");
 		d_set = d_set->next_node;
 	}
 
@@ -132,10 +163,20 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 		goto out;
 	}
 	
+	new_data->next_node = NULL;
+
 	d_set->next_node = new_data;
-	if (buffer){
-		new_data->prev_node = d_set;
-	}
+	new_data->prev_node = d_set;
+
+	printk(KERN_NOTICE "d_set              :   %p\n", d_set);
+	printk(KERN_NOTICE "d_set->data        :   %p\n", d_set->data);
+	printk(KERN_NOTICE "d_set->prev_node   :   %p\n", d_set->prev_node);
+	printk(KERN_NOTICE "d_set->next_node   :   %p\n", d_set->next_node);
+
+	printk(KERN_NOTICE "new_data           :   %p\n", new_data);
+	printk(KERN_NOTICE "new_data->data     :   %p\n", new_data->data);
+	printk(KERN_NOTICE "new_data->prev_node:   %p\n", new_data->prev_node);
+	printk(KERN_NOTICE "new_data->next_node:   %p\n", new_data->next_node);
 
 	printk(KERN_NOTICE "line 83\n");
 
