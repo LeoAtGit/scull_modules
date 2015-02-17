@@ -14,12 +14,12 @@ int main (int argc, char *argv[])
 	char *buffer = malloc(1000); // magic number TODO buffer overflow watch out
 
 	if (argc < 2){
-		printf("wrong usage, ./%s filename [count]\n", argv[0]);
+		printf("wrong usage, %s filename [count]\n", argv[0]);
 		return -1;
 	}
 
 	filename = argv[1];
-	count = argc == 3 ? atoi(argv[2]) : 100;
+	count = (argc == 3) ? atoi(argv[2]) : 100;
 
 	fd = open(filename, O_RDWR);
 

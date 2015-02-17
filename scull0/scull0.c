@@ -29,26 +29,23 @@ struct file_operations scull_fops = {
 
 ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
-	struct scull_device *dev = filp->private_data;
+	//TODO struct scull_device *dev = filp->private_data;
+	struct scull_device *dev = scull_device;
 	struct data_set *crawler = NULL;
 	ssize_t ret = 0;
 
 	printk(KERN_NOTICE "entered scull_read\n");
-	//if (*f_pos >= dev->size) /* Check how the size is implemented */
 	
-	if (!dev->data) /* if this is NULL then read nothing */
-		goto out;
-
-	if (count > dev->size)
-		count = dev->size;
-
 	crawler = dev->data;
-	if (!crawler){
+	if (!crawler){ /* if this is NULL then read nothing */
 		printk(KERN_ERR "The crawler in the read function is a null pointer\n");
 		goto out;
 	}
 
-	while(crawler->next_node){
+	if (count > dev->size)
+		count = dev->size;
+
+	/*TODO while(crawler->next_node){
 		if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
 			ret = -EFAULT;
 			goto out;
@@ -60,15 +57,25 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
 		ret = -EFAULT;
 		goto out;
+	}*/
+	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
+		ret = -EFAULT;
+		goto out;
 	}
 
-/*	while(dev->data->next_node){
-		if (copy_to_user(buf, dev->data->data, (count > dev->data->size) ? dev->data->size : count)){ 
-			ret = -EFAULT;
-			goto out;
-		}
+	printk(KERN_NOTICE "crawler           :   %p\n", crawler);
+	printk(KERN_NOTICE "crawler->data     :   %p\n", crawler->data);
+	printk(KERN_NOTICE "crawler->prev_node:   %p\n", crawler->prev_node);
+	printk(KERN_NOTICE "crawler->next_node:   %p\n", crawler->next_node);
+
+	if (crawler->next_node)
+		crawler = crawler->next_node;
+
+	if (copy_to_user(buf, crawler->data, (count > crawler->size) ? crawler->size : count)){
+		ret = -EFAULT;
+		goto out;
 	}
-*/
+
 	*f_pos += count; 
 	ret = count;
 
@@ -78,7 +85,8 @@ out:
 
 ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos)
 {
-	struct scull_device *dev = filp->private_data;
+	//TODO struct scull_device *dev = filp->private_data;
+	struct scull_device *dev = scull_device;
 	struct data_set *d_set = dev->data;
 	struct data_set *new_data = NULL;
 	void *buffer = NULL;
@@ -105,17 +113,13 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 	printk(KERN_NOTICE "line 65\n");
 
 	while(d_set->next_node != NULL){
-		printk(KERN_NOTICE "line 67\n");
-		//buffer = (void *) d_set;
 		buffer = &d_set;
-		printk(KERN_NOTICE "line 69\n");
 		d_set = d_set->next_node;
-		printk(KERN_NOTICE "line 71\n");
 	}
 
 	printk(KERN_NOTICE "line 70\n");
 
-	new_data = kmalloc(sizeof(data_set), GFP_KERNEL);
+	new_data = kmalloc(sizeof(struct data_set), GFP_KERNEL);
 	if (!new_data){
 		printk(KERN_ERR "Couldnt allocate space for the new data set\n");
 		ret = -ENOMEM;
@@ -123,17 +127,18 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 	}
 
 	new_data->data = kmalloc(count * sizeof(char), GFP_KERNEL);
-	if (buffer){
-		new_data->prev_node = d_set;
-		d_set->next_node = new_data;
-	}
-
-	printk(KERN_NOTICE "line 83\n");
-
 	if (!new_data->data){
 		ret = -ENOMEM;
 		goto out;
 	}
+	
+	d_set->next_node = new_data;
+	if (buffer){
+		new_data->prev_node = d_set;
+	}
+
+	printk(KERN_NOTICE "line 83\n");
+
 	memset(new_data->data, 0, count * sizeof(char));
 	dev->size += count;
 
@@ -179,8 +184,6 @@ void scull_cdev_init(struct scull_device *dev)
 	printk(KERN_NOTICE "entered scull_cdev_init\n");
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
-	dev->size = 0;
-	//dev->cdev.ops = &scull_fops  /* TODO check if I even need this line */
 	
 	err_code = cdev_add(&dev->cdev, dev_num, 1);
 	if(err_code)
@@ -193,7 +196,7 @@ void scull_cdev_del(struct scull_device *dev)
 	printk(KERN_ERR "[DEBUG] we are now in scull_cdev_del\n");
 
 	if (dev->data)
-		delete_linked_list();
+//TODO		delete_linked_list();
 
 	printk(KERN_ERR "[DEBUG] I could free dev->data without a segfault\n");
 
@@ -238,11 +241,11 @@ int scull_init(void)
 	printk(KERN_NOTICE "entered scull_init\n");
 	printk(KERN_DEBUG "Attempting to load the module\n");
 
-	first_data_set = kmalloc(sizeof(data_set), GFP_KERNEL);
+	first_data_set = kmalloc(sizeof(struct data_set), GFP_KERNEL);
 	if (!first_data_set)
 		return -ENOMEM;
 	first_data_set->data = test_string;
-	first_data_set->size = sizeof(test_string);
+	first_data_set->size = strlen(test_string);
 	first_data_set->prev_node = NULL;
 	first_data_set->next_node = NULL;
 
@@ -259,6 +262,7 @@ int scull_init(void)
 	scull_cdev = cdev_alloc();
 	scull_device->cdev = *scull_cdev;
 	scull_device->data = first_data_set;
+	scull_device->size = first_data_set->size;
 
 	scull_cdev_init(scull_device);
 
