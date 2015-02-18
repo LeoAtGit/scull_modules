@@ -34,10 +34,9 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 	ssize_t ret = 0;
 	int orig_count = count;
 	char *collected_data = NULL;
-	int flag = 0;
 
 	crawler = dev->data;
-	if (!crawler){ /* if this is NULL then read nothing */
+	if (!crawler || (!crawler->data && !crawler->next_node)){ /* if this is NULL then read nothing */
 		printk(KERN_ERR "The crawler in the read function is a null pointer\n");
 		goto out;
 	}
@@ -51,17 +50,12 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 		goto out;
 	}
 	memset(collected_data, '\0', count * sizeof(char) + 1);
+	
+	strcpy(collected_data, crawler->data);
 
 	while(crawler->next_node){
-		if (!flag){
-			flag = 1;
-			strcpy(collected_data, crawler->data);
-		}
-		else{
-			strcat(collected_data, crawler->data); 
-		}
-
 		crawler = crawler->next_node;
+		strcat(collected_data, crawler->data); 
 	}
 
 	if (copy_to_user(buf, collected_data, count)){
@@ -82,18 +76,22 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 	struct data_set *d_set = dev->data;
 	struct data_set *new_data = NULL;
 	ssize_t ret = 0;
+	int flag_is_first = 0;
 
 	if (d_set == NULL){
 		// first time writing to the device
-		/*d_set = kmalloc(sizeof(data_set), GFP_KERNEL);
+		flag_is_first = 1;
+		d_set = kmalloc(sizeof(struct data_set), GFP_KERNEL);
 		if (!d_set){
 			printk(KERN_ERR "Couldnt alloc memory for the first data\n");
 			ret = -ENOMEM;
 			goto out;
-		}*/
-		printk(KERN_ERR "This shouldnt happen, the first data set is empty\n");
-		ret = -EFAULT;
-		goto out;
+		}
+		d_set->data = NULL;
+		d_set->next_node = NULL;
+		d_set->prev_node = NULL;
+
+		dev->data = d_set;
 	}
 
 	while(d_set->next_node){
@@ -112,7 +110,7 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 		ret = -ENOMEM;
 		goto out;
 	}
-	
+
 	new_data->next_node = NULL;
 
 	d_set->next_node = new_data;
@@ -127,6 +125,14 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 	}
 
 	new_data->size = count;
+
+	if (flag_is_first){
+		d_set->data = new_data->data;
+		d_set->prev_node = NULL;
+		d_set->next_node = new_data->next_node;
+	}
+
+	dev->data->data = new_data->data;
 
 	*f_pos += count;
 	ret = count;
@@ -164,9 +170,6 @@ void scull_cdev_init(struct scull_device *dev)
 
 void scull_cdev_del(struct scull_device *dev)
 {
-	if (dev->data)
-//TODO		delete_linked_list();
-
 	cdev_del(&dev->cdev);
 
 	return;
@@ -177,10 +180,7 @@ void delete_linked_list()
 	struct data_set *crawler = scull_device->data;
 	void *buffer = NULL;
 
-	printk(KERN_NOTICE "entered delete_linked_list");
-
-	if (!crawler && scull_device->size){
-		printk(KERN_ERR "ERROR: couldnt get the data pointer");
+	if (!crawler && !scull_device->size){
 		return;
 	}
 
@@ -207,8 +207,12 @@ int scull_init(void)
 	first_data_set = kmalloc(sizeof(struct data_set), GFP_KERNEL);
 	if (!first_data_set)
 		return -ENOMEM;
-	first_data_set->data = test_string;
-	first_data_set->size = strlen(test_string) + 1;
+	first_data_set->data = NULL;
+	//worksfirst_data_set->data = "a";
+	//first_data_set->data = test_string;
+	first_data_set->size = 0;
+	//worksfirst_data_set->size = 2;
+	//first_data_set->size = strlen(test_string) + 1;
 	first_data_set->prev_node = NULL;
 	first_data_set->next_node = NULL;
 
