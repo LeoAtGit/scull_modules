@@ -29,47 +29,37 @@ struct file_operations scull_fops = {
 
 ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
-	//TODO struct scull_device *dev = filp->private_data;
-	struct scull_device *dev = scull_device;
+	struct scull_device *dev = filp->private_data;
 	struct data_set *crawler = NULL;
 	ssize_t ret = 0;
 	int orig_count = count;
-	int temp_count = 0;
 	char *collected_data = NULL;
-	int size_of_collected_data = 0;
+	int flag = 0;
 
-	printk(KERN_NOTICE "entered scull_read\n");
-	
 	crawler = dev->data;
 	if (!crawler){ /* if this is NULL then read nothing */
 		printk(KERN_ERR "The crawler in the read function is a null pointer\n");
 		goto out;
 	}
 	
-	printk(KERN_NOTICE "count == %d\n", count);
-
 	if (count > dev->size)
 		count = dev->size;
 
-	printk(KERN_NOTICE "count == %d\n", count);
-
-	collected_data = kmalloc(count * sizeof(char), GFP_KERNEL);
+	collected_data = kmalloc(count * sizeof(char) + 1, GFP_KERNEL);
 	if (!collected_data){
 		ret = -ENOMEM;
 		goto out;
 	}
+	memset(collected_data, '\0', count * sizeof(char) + 1);
 
 	while(crawler->next_node){
-		if (count > crawler->size){
-			temp_count = crawler->size;
-			count -= temp_count;
+		if (!flag){
+			flag = 1;
+			strcpy(collected_data, crawler->data);
 		}
-
-		strcat(collected_data, crawler->data); //TODO error checking, strcat
-
-		//printk(KERN_NOTICE "count == %d\n", count);
-		printk(KERN_NOTICE "crawler->data == %p", crawler->data);
-		printk(KERN_NOTICE "crawler->data == %s", crawler->data);
+		else{
+			strcat(collected_data, crawler->data); 
+		}
 
 		crawler = crawler->next_node;
 	}
@@ -79,34 +69,6 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 		goto out;
 	}
 	
-	/*DEBUG FIRST TWO NODES if (copy_to_user(buf, crawler->data, temp_count)){
-		ret = -EFAULT;
-		goto out;
-	}
-
-	printk(KERN_NOTICE "crawler           :   %p\n", crawler);
-	printk(KERN_NOTICE "crawler->data     :   %p\n", crawler->data);
-	printk(KERN_NOTICE "crawler->prev_node:   %p\n", crawler->prev_node);
-	printk(KERN_NOTICE "crawler->next_node:   %p\n", crawler->next_node);
-
-	if (crawler->next_node)
-		crawler = crawler->next_node;
-
-	if (count > crawler->size){
-		temp_count = crawler->size;
-		count -= temp_count;
-	}
-
-	printk(KERN_NOTICE "crawler           :   %p\n", crawler);
-	printk(KERN_NOTICE "crawler->data     :   %p\n", crawler->data);
-	printk(KERN_NOTICE "crawler->prev_node:   %p\n", crawler->prev_node);
-	printk(KERN_NOTICE "crawler->next_node:   %p\n", crawler->next_node);
-
-	if (copy_to_user(buf, crawler->data, temp_count)){
-		ret = -EFAULT;
-		goto out;
-	}*/
-
 	*f_pos += orig_count; 
 	ret = orig_count;
 
@@ -116,16 +78,10 @@ out:
 
 ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos)
 {
-	//TODO struct scull_device *dev = filp->private_data;
-	struct scull_device *dev = scull_device;
+	struct scull_device *dev = filp->private_data;
 	struct data_set *d_set = dev->data;
 	struct data_set *new_data = NULL;
 	ssize_t ret = 0;
-
-	printk(KERN_NOTICE "dev:   %p\n", dev);
-	printk(KERN_NOTICE "d_set: %p\n", d_set);
-
-	printk(KERN_NOTICE "entered scull_write\n");
 
 	if (d_set == NULL){
 		// first time writing to the device
@@ -140,15 +96,9 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 		goto out;
 	}
 
-	printk(KERN_NOTICE "line 65\n");
-
-	printk(KERN_NOTICE "value of d_set->next_node: %p\n", d_set->next_node);
 	while(d_set->next_node){
-		printk(KERN_ERR "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR\n");
 		d_set = d_set->next_node;
 	}
-
-	printk(KERN_NOTICE "line 70\n");
 
 	new_data = kmalloc(sizeof(struct data_set), GFP_KERNEL);
 	if (!new_data){
@@ -157,7 +107,7 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 		goto out;
 	}
 
-	new_data->data = kmalloc(count * sizeof(char), GFP_KERNEL);
+	new_data->data = kmalloc(count * sizeof(char) + 1, GFP_KERNEL);
 	if (!new_data->data){
 		ret = -ENOMEM;
 		goto out;
@@ -168,29 +118,13 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_
 	d_set->next_node = new_data;
 	new_data->prev_node = d_set;
 
-	printk(KERN_NOTICE "d_set              :   %p\n", d_set);
-	printk(KERN_NOTICE "d_set->data        :   %p\n", d_set->data);
-	printk(KERN_NOTICE "d_set->prev_node   :   %p\n", d_set->prev_node);
-	printk(KERN_NOTICE "d_set->next_node   :   %p\n", d_set->next_node);
-
-	printk(KERN_NOTICE "new_data           :   %p\n", new_data);
-	printk(KERN_NOTICE "new_data->data     :   %p\n", new_data->data);
-	printk(KERN_NOTICE "new_data->prev_node:   %p\n", new_data->prev_node);
-	printk(KERN_NOTICE "new_data->next_node:   %p\n", new_data->next_node);
-
-	printk(KERN_NOTICE "line 83\n");
-
-	memset(new_data->data, 0, count * sizeof(char));
+	memset(new_data->data, '\0', count * sizeof(char) + 1);
 	dev->size += count;
-
-	printk(KERN_NOTICE "line 92\n");
 
 	if (copy_from_user(new_data->data, buf, count)){
 		ret = -EFAULT;
 		goto out;
 	}
-
-	printk(KERN_NOTICE "line 99\n");
 
 	new_data->size = count;
 
@@ -205,7 +139,6 @@ int scull_open(struct inode *inode, struct file *filp)
 {
 	struct scull_device *dev;
 
-	printk(KERN_NOTICE "entered scull_open\n");
 	dev = container_of(inode->i_cdev, struct scull_device, cdev);
 	filp->private_data = dev;
 
@@ -214,7 +147,6 @@ int scull_open(struct inode *inode, struct file *filp)
 
 int scull_release(struct inode *inode, struct file *filp)
 {
-	printk(KERN_NOTICE "entered scull_release\n");
 	return 0;
 }
 
@@ -222,7 +154,6 @@ void scull_cdev_init(struct scull_device *dev)
 {
 	int err_code = 0;
 
-	printk(KERN_NOTICE "entered scull_cdev_init\n");
 	cdev_init(&dev->cdev, &scull_fops);
 	dev->cdev.owner = THIS_MODULE;
 	
@@ -233,13 +164,8 @@ void scull_cdev_init(struct scull_device *dev)
 
 void scull_cdev_del(struct scull_device *dev)
 {
-	printk(KERN_NOTICE "entered scull_cdev_del\n");
-	printk(KERN_ERR "[DEBUG] we are now in scull_cdev_del\n");
-
 	if (dev->data)
 //TODO		delete_linked_list();
-
-	printk(KERN_ERR "[DEBUG] I could free dev->data without a segfault\n");
 
 	cdev_del(&dev->cdev);
 
@@ -277,16 +203,12 @@ int scull_init(void)
 {
 	int err = 0;
 	struct cdev *scull_cdev;
-//	struct data_set *first_data_set;
-
-	printk(KERN_NOTICE "entered scull_init\n");
-	printk(KERN_DEBUG "Attempting to load the module\n");
 
 	first_data_set = kmalloc(sizeof(struct data_set), GFP_KERNEL);
 	if (!first_data_set)
 		return -ENOMEM;
 	first_data_set->data = test_string;
-	first_data_set->size = strlen(test_string);
+	first_data_set->size = strlen(test_string) + 1;
 	first_data_set->prev_node = NULL;
 	first_data_set->next_node = NULL;
 
@@ -313,18 +235,12 @@ int scull_init(void)
 
 void scull_clean_up(void)
 {
-	printk(KERN_NOTICE "entered scull_clean_up\n");
-
-//	delete_linked_list();
+	delete_linked_list();
 
 	scull_cdev_del(scull_device);
 
-	printk(KERN_ERR "[DEBUG] scull_cdev_del executed correctly\n");
-
 	if (scull_device)
 		kfree(scull_device);
-
-	printk(KERN_ERR "[DEBUG] kfreed the scull_device global variable\n");
 
 	unregister_chrdev_region(dev_num, 1);
 
