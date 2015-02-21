@@ -1,0 +1,47 @@
+This driver just saves the stuff you write to it in a linked list and it can 
+write it back to you.
+
+This driver references Chapter 3 of Linux Device Drivers 3rd Edition.
+
+I learned some basics about awk when I had to write the scull_load script. The
+scull_load script is there to extract the dynamically gotten device number 
+every device must have in the kernel. It reads it from /proc/devices and per-
+forms some awk action on it and then you just make out of that number the nod 
+in the /dev/ directory, for easier access to the device for me.
+
+I first implemented this driver with a fixed size and no means to allocate any
+storage dynamically. Later in development I added the linked list implemen-
+tation which got me many many bugs in the code. It was hard to implement, be-
+cause I apparently was too dumb to write a linked list and did some really
+stupid stuff.
+But in the end it worked somehow but the driver still corrupts the slab, the 
+kernel oops says that I write in already freed memory. But this should not be
+happening because when I call the write or the read function (or generally any
+function about IO) I havent freed anything... So yeah, this is definately some
+strange behaviour. 
+Other stuff I would really like to know is what the filp and what the inode 
+structs you are getting from read and write and open are meaning or what files
+or inodes they are referencing, in which relation are they standing with the 
+system calls. But I guess I need some knowledge  of assembly first, which 
+will come later. Maybe.
+There are some more or less hacky implementations in the driver code, probably
+some very redundant checking and two crucial global variables which definately
+shouldnt be global, but I was too lazy to change that. 
+Also I am fairly certain that not all the memory I am using is freed correctly, 
+many leaks are probably occuring. But this drivers should just be for learning,
+and not so I wrote a perfect driver. 
+Another strange thing is that the command "cat" continues reading from the de-
+vice even though everything has been returned. I probably have to implement 
+something so that the read function returns 0 after everything has been read.
+But this is probably harder than I thought, because I dont know how big my 
+device and the other structure (the linked list) is. I also dont know how to 
+correctly account for the terminating NULL byte at the end of the strings, 
+which also gave me a headache when debugging. So I added a kind of brute force
+solution which is really not that elegant and probably a waste of precious re-
+sources. 
+
+But hey, this is only for fun and practice, doesnt need to be perfect!
+In my next driver I will build on that knowledge and hopefully profit from it.
+
+--Leo 
+
