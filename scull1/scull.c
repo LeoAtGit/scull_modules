@@ -27,8 +27,10 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
 	int read = count;
 
-	if (down_interruptible(scull_device->sem))
-		return -ERESTARTSYS;
+	/* FIXME
+	 * use down_interruptible so the device can be interrupted by user
+	 * space interrupts */
+	down(scull_device->sem);
 
 	if (count > scull_device->size)
 		count = scull_device->size;
@@ -40,7 +42,10 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 
 	read -= count;
 out:
-	up(scull_device->sem);
+	/* FIXME
+	 * The bug here is that the lock is not interruptible by user space 
+	 * */
+	//up(scull_device->sem);
 	return read;
 }
 
