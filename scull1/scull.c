@@ -40,7 +40,10 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 
 	read -= count;
 out:
-	up(scull_device->sem);
+	/* FIXME 
+	 * Introduced a bug here by deleting the line which ups the semaphore.
+	 * The device will be a zombie device, lets see how it works out. */
+	//up(scull_device->sem);
 	return read;
 }
 
