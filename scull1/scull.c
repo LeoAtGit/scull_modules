@@ -25,12 +25,58 @@ struct file_operations scull_fops = {
 
 ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
-	return 0;
+	int read = count;
+
+	if (down_interruptible(scull_device->sem))
+		return -ERESTARTSYS;
+
+	if (count > scull_device->size)
+		count = scull_device->size;
+
+	if (copy_to_user(buf, scull_device->data, count)){
+		read = -EFAULT;
+		goto out;
+	}
+
+	read -= count;
+out:
+	up(scull_device->sem);
+	return read;
 }
 
 ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *fpos)
 {
-	return 1;
+	int written = 0;
+	char *data = NULL;
+
+	if (down_interruptible(scull_device->sem))
+		return -ERESTARTSYS;
+
+	if (scull_device->data)
+		kfree(scull_device->data);
+
+	if (count > SCULL_SIZE)
+		count = SCULL_SIZE;
+	
+	scull_device->data = kmalloc(count * sizeof(char) + 1, GFP_KERNEL);
+	if (!scull_device->data){
+		written = -ENOMEM;
+		goto out;
+	}
+	scull_device->size = count;
+
+	data = scull_device->data;
+	*(data + count + 1) = '\0';
+
+	if (copy_from_user(scull_device->data, buf, count)){
+		written = -EFAULT;
+		goto out;
+	}
+
+	written = count;
+out:
+	up(scull_device->sem);
+	return written;
 }
 
 int scull_open(struct inode *inode, struct file *filp)
@@ -61,10 +107,18 @@ int scull_init(void)
 
 	scull_cdev = cdev_alloc();
 	scull_device->cdev = scull_cdev;
-	scull_device->size = 0;
+	scull_device->size = SCULL_SIZE;
+	scull_device->data = NULL;
 
 	cdev_init(scull_cdev, &scull_fops);
 	scull_cdev->owner = THIS_MODULE;
+
+	scull_device->sem = kmalloc(sizeof(struct semaphore), GFP_KERNEL);
+	if (!scull_device->sem)
+		return -ENOMEM;
+
+	sema_init(scull_device->sem, 1);
+	//init_MUTEX(scull_device->sem);
 
 	err = cdev_add(scull_cdev, device_num, 1);
 	if (err)
@@ -79,6 +133,12 @@ void scull_exit(void)
 {
 	cdev_del(scull_device->cdev);
 	unregister_chrdev_region(device_num, 1);
+
+	if (scull_device->data)
+		kfree(scull_device->data);
+	
+	if (scull_device->sem)
+		kfree(scull_device->sem);
 
 	if (scull_device)
 		kfree(scull_device);

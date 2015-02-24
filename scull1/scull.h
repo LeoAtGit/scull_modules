@@ -1,6 +1,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
+#include <linux/semaphore.h>
+
 #undef PDEBUG
 #ifdef SCULL_DEBUG
 	/* When debugging is turned on, use this macro to write to dmesg */
@@ -15,18 +17,15 @@
 #define QUANTUM_SIZE 64
 #define QUANTUM_SET_SIZE 4
 
-struct scull_data 
-{
-	char **data;
-	struct scull_data *next_node;
-};
+#define SCULL_SIZE 4096
 
 struct scull_device
 {
 	struct scull_data *data;
-	int quantum_size;
-	int quantum_set_size;
+	void *read_ptr;
+	void *write_ptr;
 	size_t size;
+	struct semaphore *sem;
 	struct cdev *cdev;
 };
 
