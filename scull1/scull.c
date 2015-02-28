@@ -13,6 +13,8 @@ int scull_minor = 0;
 
 int device_num = 0;
 
+struct completion my_completion;
+
 struct scull_device *scull_device;
 
 struct file_operations scull_fops = {
@@ -26,6 +28,8 @@ struct file_operations scull_fops = {
 ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
 	int read = count;
+
+	wait_for_completion(&my_completion);
 
 	if (down_interruptible(scull_device->sem))
 		return -ERESTARTSYS;
@@ -48,6 +52,8 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *fp
 {
 	int written = 0;
 	char *data = NULL;
+
+	complete_all(&my_completion);
 
 	if (down_interruptible(scull_device->sem))
 		return -ERESTARTSYS;
@@ -119,6 +125,8 @@ int scull_init(void)
 
 	sema_init(scull_device->sem, 1);
 	//init_MUTEX(scull_device->sem);
+	
+	init_completion(&my_completion);
 
 	err = cdev_add(scull_cdev, device_num, 1);
 	if (err)
