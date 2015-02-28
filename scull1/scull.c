@@ -6,6 +6,9 @@
 #include <linux/cdev.h>
 #include <linux/slab.h>
 
+#include <linux/spinlock_types.h>
+#include <linux/spinlock.h>
+
 #include "scull.h"
 
 int scull_major = 0;
@@ -14,6 +17,8 @@ int scull_minor = 0;
 int device_num = 0;
 
 struct scull_device *scull_device;
+
+DEFINE_SPINLOCK(lock);
 
 struct file_operations scull_fops = {
 	.owner = THIS_MODULE,
@@ -27,11 +32,20 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
 {
 	int read = count;
 
+	spin_lock(&lock);
+
 	if (down_interruptible(scull_device->sem))
 		return -ERESTARTSYS;
 
 	if (count > scull_device->size)
 		count = scull_device->size;
+
+	spin_unlock(&lock);
+
+	PDEBUG("line 43\n");
+	PDEBUG("buf               : %p", buf);
+	PDEBUG("scull_device->data: %p", scull_device->data);
+	PDEBUG("count             : %i", count);
 
 	if (copy_to_user(buf, scull_device->data, count)){
 		read = -EFAULT;
@@ -49,6 +63,8 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *fp
 	int written = 0;
 	char *data = NULL;
 
+	spin_lock(&lock);
+
 	if (down_interruptible(scull_device->sem))
 		return -ERESTARTSYS;
 
@@ -58,6 +74,8 @@ ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *fp
 	if (count > SCULL_SIZE)
 		count = SCULL_SIZE;
 	
+	spin_unlock(&lock);
+
 	scull_device->data = kmalloc(count * sizeof(char) + 1, GFP_KERNEL);
 	if (!scull_device->data){
 		written = -ENOMEM;
@@ -119,7 +137,7 @@ int scull_init(void)
 
 	sema_init(scull_device->sem, 1);
 	//init_MUTEX(scull_device->sem);
-
+	
 	err = cdev_add(scull_cdev, device_num, 1);
 	if (err)
 		return -2;
