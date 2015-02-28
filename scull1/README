@@ -1,0 +1,13 @@
+In this folder (scull1/) you can change around the different branches to see different examples of how locking is implemented.
+
+You can switch between branches by using the command 
+	
+	git checkout origin/name_of_branch 
+
+and you can see the name of the branch when you first pull from it or in the web interface of github. And of course it is listed here:
+
+ - completion
+ - deadlock
+ - deadlock_not_interruptible
+
+
