@@ -14,5 +14,9 @@ Contents:
  			- completion
  			- deadlock
  			- deadlock_not_interruptible
+			- spinlock (1)
 
+
+_______________________________________________________________________
+(1) Annotation for the spinlock implementation: The lock cannot be held when there are non atomic function calls in between. Otherwise there will be a kernel error.
 
