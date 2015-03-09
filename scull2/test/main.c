@@ -35,6 +35,8 @@
 
 #define SCULL_IOC_MAXNR 6
 
+#define SCULL_IOCBROKEN _IO('l', 7)
+
 int main(int argc, char *argv[])
 {
 	int fd, ret;
@@ -50,7 +52,21 @@ int main(int argc, char *argv[])
 	ret = ioctl(fd, SCULL_IOCSDATA, &test);
 	if (ret){
 		printf("Error code: %d", ret);
-		return ret;
+		ret = 0;
+	}
+
+	ret = ioctl(fd, SCULL_IOCBROKEN, &test);
+	if (ret){
+		printf("Error code: %d\n", ret);
+		ret = 0;
+	}
+
+	test = 44;
+
+	ret = ioctl(fd, SCULL_IOCTDATA, test);
+	if (ret){
+		printf("Error code: %d\n", ret);
+		ret = 0;
 	}
 
 	close(fd);

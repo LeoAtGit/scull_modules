@@ -32,7 +32,6 @@ struct file_operations scull_fops = {
 long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
-	int *tmp = NULL;
 
 	/* extract the type and the number bitfields, and sort out bad 
 	 * cmds: return ENOTTY */
@@ -59,21 +58,37 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 				return -EPERM;
 			// here you could take __get_user because access_ok was 
 			// already checked on that pointer.
-			ret = get_user(tmp, (int __user *)arg);
+			ret = get_user(*data, (int __user *)arg);
 
-			PDEBUG("address of tmp: %p\naddress of arg: %p\naddress of data: %p\n", tmp, (void __user *)arg, data);
+			PDEBUG("address of data: %p\n", data);
+			PDEBUG("address of arg : %p\n", (void __user *)arg);
+			PDEBUG("value of data  : %d\n", (int) *data);
 
 			break;
+
 		case SCULL_IOCTDATA: 
+			if (!capable(CAP_SYS_ADMIN))
+				return -EPERM;
+
+			//ret = get_user(*data, arg);
+			*data = (int __user) arg;
+
+			PDEBUG("value of data: %d\n", *data);
+
 			break;
+
 		case SCULL_IOCGDATA: 
 			break;
+
 		case SCULL_IOCQDATA: 
 			break;
+
 		case SCULL_IOCXDATA: 
 			break;
+
 		case SCULL_IOCHDATA: 
 			break;
+
 		default: 
 			return -ENOTTY;
 	}
@@ -112,10 +127,12 @@ int scull_init(void)
 
 	scull_cdev = cdev_alloc();
 	cdev_init(scull_cdev, &scull_fops);
+	scull_cdev->owner = THIS_MODULE;
+
+	err = cdev_add(scull_cdev, device_num, 1);
 
 	data = kmalloc( sizeof(char) * MAX_STR_LEN, GFP_KERNEL);
 	strcpy(data, "This is the value of the global variable.\n\0");
-	PDEBUG("This is the pointer address: %p\n", data);
 
 	return 0;
 }
