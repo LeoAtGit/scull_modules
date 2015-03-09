@@ -1,5 +1,8 @@
-#include <linux/kernel.h>
-#include <linux/module.h>
+#include <stdio.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #undef PDEBUG
 #ifdef SCULL_DEBUG
@@ -32,10 +35,26 @@
 
 #define SCULL_IOC_MAXNR 6
 
-long scull_ioctl(struct file *, unsigned int, unsigned long);
-int scull_init(void);
-void scull_exit(void);
-int scull_open(struct inode *, struct file *);
-int scull_release(struct inode *, struct file *);
-ssize_t scull_read(struct file *, char *, size_t, loff_t *);
+int main(int argc, char *argv[])
+{
+	int fd, ret;
+
+	int test = 22;
+
+	fd = open("/dev/scull", O_RDONLY);
+	if (fd == -1){
+		printf("Couldnt open the device!\n");
+		return -1;
+	}
+
+	ret = ioctl(fd, SCULL_IOCSDATA, &test);
+	if (ret){
+		printf("Error code: %d", ret);
+		return ret;
+	}
+
+	close(fd);
+
+	return 0;
+}
 

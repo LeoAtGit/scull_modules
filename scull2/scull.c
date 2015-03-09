@@ -3,6 +3,7 @@
 #include <linux/slab.h> // for kmalloc and kfree
 #include <linux/fs.h> // for file_operations
 #include <asm/uaccess.h> // for access_ok and put_user and get_user
+#include <linux/cdev.h> // obviously for cdev stuff
 
 #include <asm/ioctl.h>
 
@@ -10,10 +11,21 @@
 
 #define MAX_STR_LEN 128
 
+// this is the data byte everything will be saved upon
 char *data = NULL;
+
+int scull_major = 0;
+int scull_minor = 0;
+
+int device_num = 0;
+
+struct cdev *scull_cdev = NULL;
 
 struct file_operations scull_fops = {
 	.owner = THIS_MODULE,
+	.read = scull_read,
+	.open = scull_open,
+	.release = scull_release,
 	.unlocked_ioctl = scull_ioctl,
 };
 
@@ -49,7 +61,7 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			// already checked on that pointer.
 			ret = get_user(tmp, (int __user *)arg);
 
-			printk("address of tmp: %p\naddress of arg: %p\naddress of data: %p\n", tmp, arg, (void __user *)data);
+			PDEBUG("address of tmp: %p\naddress of arg: %p\naddress of data: %p\n", tmp, (void __user *)arg, data);
 
 			break;
 		case SCULL_IOCTDATA: 
@@ -69,17 +81,52 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
+ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
+{
+	return count; 
+}
+
+int scull_open(struct inode *inode, struct file *filp)
+{
+	PDEBUG("scull_open called, return 0 now\n");
+	return 0;
+}
+
+int scull_release(struct inode *inode, struct file *filp)
+{
+	return 0;
+}
+
 int scull_init(void)
 {
+	int err;
+
+	err = alloc_chrdev_region(&device_num, scull_minor, 1, "scull");
+	if (err)
+		return -1;
+
+	PDEBUG("device number = %d\n", device_num);
+
+	scull_major = MAJOR(device_num);
+	scull_minor = MINOR(device_num);
+
+	scull_cdev = cdev_alloc();
+	cdev_init(scull_cdev, &scull_fops);
+
 	data = kmalloc( sizeof(char) * MAX_STR_LEN, GFP_KERNEL);
 	strcpy(data, "This is the value of the global variable.\n\0");
-	printk("This is the pointer address: %p\n", data);
+	PDEBUG("This is the pointer address: %p\n", data);
+
 	return 0;
 }
 
 void scull_exit(void)
 {
+	cdev_del(scull_cdev);
+	unregister_chrdev_region(device_num, 1);
+
 	kfree(data);
+
 	return;
 }
 
