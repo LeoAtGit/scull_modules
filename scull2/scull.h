@@ -20,8 +20,8 @@
  * T means TELL through a value,
  * G means GET: get the pointer,
  * Q means QUERY: get the value (return value)
- * X means EXCHANGE: switch G and S atomically
- * H means SHIFT: switch T and Q atomically
+ * X means EXCHANGE: do G and S atomically
+ * H means SHIFT: do T and Q atomically
  * */
 #define SCULL_IOCSDATA _IOW(SCULL_IOC_MAGIC, 1, int)
 #define SCULL_IOCTDATA _IO(SCULL_IOC_MAGIC, 2)

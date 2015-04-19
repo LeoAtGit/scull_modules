@@ -69,6 +69,42 @@ int main(int argc, char *argv[])
 		ret = 0;
 	}
 
+	ret = ioctl(fd, SCULL_IOCGDATA, &test);
+	if (ret){
+		printf("Error code: %d\n", ret);
+		ret = 0;
+	}
+	printf("address of test: %p\n", &test);
+	printf("value of test  : %d\n", test);
+
+	test = 0;
+
+	ret = ioctl(fd, SCULL_IOCQDATA);
+	if (ret){
+		printf("value returned: %d\n", ret);
+		ret = 0;
+	}
+
+	test = 66;
+
+	ret = ioctl(fd, SCULL_IOCXDATA, &test);
+	if (ret){
+		printf("Error code: %d\n", ret);
+		ret = 0;
+	}
+	printf("address of test: %p\n", &test);
+	printf("value of test  : %d\n", test);
+
+	test = 88;
+
+	ret = ioctl(fd, SCULL_IOCHDATA, test);
+	if (ret){
+		printf("Error code: %d\n", ret);
+		ret = 0;
+	}
+	printf("address of test: %p\n", &test);
+	printf("value of test  : %d\n", test);
+
 	close(fd);
 
 	return 0;

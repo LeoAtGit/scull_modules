@@ -32,6 +32,7 @@ struct file_operations scull_fops = {
 long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
+	int tmp = 0;
 
 	/* extract the type and the number bitfields, and sort out bad 
 	 * cmds: return ENOTTY */
@@ -78,15 +79,40 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 
 		case SCULL_IOCGDATA: 
+			ret = put_user(*data, (int __user *)arg);
+
 			break;
 
 		case SCULL_IOCQDATA: 
+			return *data;
+
 			break;
 
 		case SCULL_IOCXDATA: 
+			if (!capable(CAP_SYS_ADMIN))
+				return -EPERM;
+
+			tmp = *data;
+			ret = get_user(*data, (int __user *)arg);
+			if (ret == 0){
+				ret = put_user(tmp, (int __user *)arg);
+			}
+
+			PDEBUG("value of data: %d\n", *data);
+
 			break;
 
 		case SCULL_IOCHDATA: 
+			if (!capable(CAP_SYS_ADMIN))
+				return -EPERM;
+
+			tmp = *data;
+			*data = (int __user)arg;
+
+			PDEBUG("value of data: %d\n", *data);
+
+			return tmp;
+
 			break;
 
 		default: 
