@@ -19,6 +19,8 @@ Contents:
 	- scull2/ is a simple driver which has the ioctl interface implemented. 
 	  Including are test programs in the test/ directory with which you can see all of the functionality the driver has. Very easy to understand.
 
+	- scull3/ is a simple driver that brings us the concept of a waitqueue closer
+	  Very easy to understand code example.
 
 _______________________________________________________________________
 (1) Annotation for the spinlock implementation: The lock cannot be held when there are non atomic function calls in between. Otherwise there will be a kernel error.
