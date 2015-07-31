@@ -11,33 +11,198 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 
+#include <linux/semaphore.h>
+
+#define BUF_SIZE 10 /* Buffer size of the circular buffer */
+
 int scull_major = 0;
 int scull_minor = 0;
 
 int device_num = 0;
 
+/* struct scull_pipe
+ * Is the main struct here, I/O will be read/written to the scull_pipe.buffer
+ * and the rp and wp will say where to read/write from/to.
+ */
 typedef struct scull_pipe {
-	char* rp;
-	char* wp;
-	struct wait_queue_head_t *iq;
-	struct wait_queue_head_t *oq;
+	char *rp, *wp;			/* The read/write pointer shows where  
+       					 * the buffer the next read/write will
+					 * be */
+	struct wait_queue_head_t *iq, *oq; /* The wait queue for input and 
+					 * output */
 
-	char *buffer;
+	char buffer[BUF_SIZE];		/* Buffer is circular */
+	char *buf_end;			/* The end address of the buffer */
 
-	struct semaphore sem;
-	struct cdev *scull_cdev;
+	struct semaphore sem;		/* Needed for checking if there is data
+					 * to be read or not */
+	struct cdev *scull_cdev;	/* Character device for /dev/ */
 } scull_pipe;
 
-scull_pipe *scull_pipe_device; 
+scull_pipe *scull_pipe_device; /* Main data structure in this driver */
 
-ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos)
+/* get_avail_memory
+ * returns the max_count scull_write has memory to write.
+ * This function is called when the semaphore is held
+ */
+ssize_t get_avail_memory(void) 
 {
+	char *wp, *rp, *end;
+	size_t ret = 0;
+
+	wp = scull_pipe_device->wp;
+	rp = scull_pipe_device->rp;
+	end = scull_pipe_device->buf_end;
+
+	pr_debug("wp = %p\n", wp);
+	pr_debug("rp = %p\n", rp);
+
+	if (wp == rp) {
+		ret = BUF_SIZE - 1;
+	} else if (wp > rp) {
+		ret = (end - 1) - wp;
+	} else if (rp > wp) {
+		if (rp - wp == 1) /* Buffer full */
+			ret = 0;
+		ret = rp - wp;
+	}
+
+	pr_debug("ret = %li\n", ret);
+	return ret;
+}
+
+/* scull_read
+ * Invoked when a read comes in. It will look if there is data to be read 
+ * and if not it will go to sleep. When data is available it will wake up and
+ * print to userspace the data
+ */
+ssize_t scull_read(struct file *filp, 
+		   char *buf, 
+		   size_t count, 
+		   loff_t *f_pos)
+{
+	char *wp = scull_pipe_device->wp;
+	char *rp = scull_pipe_device->rp;
+	char *end = scull_pipe_device->buf_end;
+	size_t ret = 0;
+	size_t delta = 0;
+	while (count != 0) {
+		/* get the semaphore to check and change the pointers */
+		while (down_interruptible(&scull_pipe_device->sem)) {
+			pr_debug("Couldn't get the semaphore, so we go to sleep\n");
+			/*FIXME*/
+			return -ERESTARTSYS;
+		}
+		end = scull_pipe_device->buf_end;
+		if (wp == rp) {
+			ret = 0;
+		} else if (wp > rp) {
+			ret = wp - rp;
+		} else if (rp > wp) {
+			if (rp == end - 1) /* Buffer emtpy */
+				ret = 0;
+			ret = (end - 1) - rp;
+		}
+		
+		pr_debug("ret = %li\n", ret);
+		if (ret) {
+			if (count > ret) 
+				count = ret;
+			
+			pr_debug("count = %li\n", count);
+			if (copy_to_user(buf, 
+					 scull_pipe_device->buffer, 
+					 count)) {
+				pr_debug("Couldn't copy to user\n");
+				return -1;
+			}
+
+			scull_pipe_device->rp += count;
+			delta = scull_pipe_device->rp -
+						scull_pipe_device->buf_end;
+			if (delta > 0) {
+				scull_pipe_device->rp = 
+					scull_pipe_device->buf_end - 1;
+			}
+			pr_debug("rp = %p\n", scull_pipe_device->rp);
+			count = 0;
+			up(&scull_pipe_device->sem);
+		} else {
+			up(&scull_pipe_device->sem);
+			count = 0;
+		}
+	}
 	return count;
 }
 
-ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos)
+/* scull_write
+ * Will only write if there is space free in the buffer. If there is no space,
+ * go to sleep and wait until the scull_read function reads from the buffer,
+ * thus changing the scull_pipe.rp and there is new place to write to.
+ */
+ssize_t scull_write(struct file *filp, 
+		    const char *buf, 
+		    size_t count, 
+		    loff_t *f_pos)
 {
-	return count; 
+	size_t max_count = 0;
+	size_t delta = 0;
+	size_t bytes_written = 0;
+	size_t tmp_count = 0;
+
+	while (count != 0) {
+		/* get the semaphore so you can make critical checks and 
+		 * so you can write to the buffer without any risk.
+		 */
+		while (down_interruptible(&scull_pipe_device->sem)) {
+			pr_debug("Couldn't get the semaphore, so we go to sleep\n");
+			/*FIXME */
+			return -ERESTARTSYS;
+		}
+		max_count = get_avail_memory();
+		if (max_count) {
+			if (count > max_count)
+				count = max_count;
+
+			if (scull_pipe_device->wp + count > scull_pipe_device->buf_end) {
+				count = scull_pipe_device->buf_end - 
+					(scull_pipe_device->wp + count);
+			}
+			if (copy_from_user(scull_pipe_device->buffer,
+					   buf,
+					   //tmp_count)) {
+					   count)) {
+				pr_debug("Couldn't write to the buffer.\n");
+				return -1;
+			}
+
+			/*count -= tmp_count;
+			bytes_written += tmp_count;*/
+			bytes_written += count;
+			count = 0;
+			scull_pipe_device->wp += bytes_written;
+			delta = scull_pipe_device->wp - 
+						   scull_pipe_device->buf_end;
+			pr_debug("delta =  %li\n", delta);
+			if (delta > 0) {
+				scull_pipe_device->wp =
+					scull_pipe_device->buf_end - 1;
+			}
+			up(&scull_pipe_device->sem);
+		} else {
+			/* release the semaphore, so other processes can empty
+			 * the buffer while you sleep so that you can write to 
+			 * it again
+			 */
+			up(&scull_pipe_device->sem);
+			/* go to sleep */
+			/*FIXME*/
+			pr_debug("sleeping\n");
+			return -ERESTARTSYS;
+		}
+	}
+
+	return bytes_written; 
 }
 
 struct file_operations scull_fops = {
@@ -50,20 +215,27 @@ int scull_init (void)
 {
 	int err = 0;
 
-	/*data = kmalloc(sizeof(char) * 1024, GFP_KERNEL);
-	if (!data)
-		return -ENOMEM;
-	*data = '\0';*/
-
-	scull_pipe_device = kmalloc(sizeof(struct scull_pipe), GFP_KERNEL);
+	scull_pipe_device = kmalloc(sizeof(scull_pipe), GFP_KERNEL);
 	if (!scull_pipe_device) {
 		pr_debug("Couldn't malloc scull_pipe_device\n");
 		return -ENOMEM;
 	}
+	/*scull_pipe_device->buffer = kmalloc(sizeof(BUF_SIZE), GFP_KERNEL);
+	if (!scull_pipe_device->buffer) {
+		pr_debug("Couldn't malloc the buffer\n");
+		goto free;
+	}*/
+	scull_pipe_device->rp = scull_pipe_device->buffer;
+	scull_pipe_device->wp = scull_pipe_device->buffer;
+	scull_pipe_device->buf_end = scull_pipe_device->buffer + BUF_SIZE;
+	sema_init(&scull_pipe_device->sem, 1);
+	//init_MUTEX(&scull_pipe_device->sem);
 
 	err = alloc_chrdev_region(&device_num, scull_minor, 1, "scull");
-	if (err)
-		return -1;
+	if (err) {
+		pr_debug("Couldn't allocate memory for the char device\n");
+		goto free;
+	}
 
 	scull_major = MAJOR(device_num);
 	scull_minor = MINOR(device_num);
@@ -76,6 +248,13 @@ int scull_init (void)
 	pr_debug("Successfully loaded with Major: %d and Minor: %d\n", scull_major, scull_minor);
 
 	return 0;
+
+free:
+	/*if (scull_pipe_device->buffer)
+		kfree(scull_pipe_device->buffer);*/
+	if (scull_pipe_device)
+		kfree (scull_pipe_device);
+	return -1;
 }
 
 void scull_exit(void)
@@ -85,8 +264,6 @@ void scull_exit(void)
 
 	if (scull_pipe_device) 
 		kfree(scull_pipe_device); /* Check if we need more kfree's */
-
-	return;
 }
 
 module_init(scull_init);
