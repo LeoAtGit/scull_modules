@@ -41,36 +41,6 @@ typedef struct scull_pipe {
 
 scull_pipe *scull_pipe_device; /* Main data structure in this driver */
 
-/* get_avail_memory
- * returns the max_count scull_write has memory to write.
- * This function is called when the semaphore is held
- */
-ssize_t get_avail_memory(void) 
-{
-	char *wp, *rp, *end;
-	size_t ret = 0;
-
-	wp = scull_pipe_device->wp;
-	rp = scull_pipe_device->rp;
-	end = scull_pipe_device->buf_end;
-
-	pr_debug("wp = %p\n", wp);
-	pr_debug("rp = %p\n", rp);
-
-	if (wp == rp) {
-		ret = BUF_SIZE - 1;
-	} else if (wp > rp) {
-		ret = (end - 1) - wp;
-	} else if (rp > wp) {
-		if (rp - wp == 1) /* Buffer full */
-			ret = 0;
-		ret = rp - wp;
-	}
-
-	pr_debug("ret = %li\n", ret);
-	return ret;
-}
-
 /* scull_read
  * Invoked when a read comes in. It will look if there is data to be read 
  * and if not it will go to sleep. When data is available it will wake up and
@@ -81,11 +51,10 @@ ssize_t scull_read(struct file *filp,
 		   size_t count, 
 		   loff_t *f_pos)
 {
-	char *wp = scull_pipe_device->wp;
-	char *rp = scull_pipe_device->rp;
-	char *end = scull_pipe_device->buf_end;
-	size_t ret = 0;
+	char *wp, *rp, *end;
+	size_t max_read = 0;
 	size_t delta = 0;
+
 	while (count != 0) {
 		/* get the semaphore to check and change the pointers */
 		while (down_interruptible(&scull_pipe_device->sem)) {
@@ -93,45 +62,49 @@ ssize_t scull_read(struct file *filp,
 			/*FIXME*/
 			return -ERESTARTSYS;
 		}
+		
+		wp = scull_pipe_device->wp;
+		rp = scull_pipe_device->rp;
 		end = scull_pipe_device->buf_end;
+
 		if (wp == rp) {
-			ret = 0;
+			max_read = 0;
 		} else if (wp > rp) {
-			ret = wp - rp;
+			max_read = wp - rp;
 		} else if (rp > wp) {
-			if (rp == end - 1) /* Buffer emtpy */
-				ret = 0;
-			ret = (end - 1) - rp;
+			max_read = end - rp;
 		}
 		
-		pr_debug("ret = %li\n", ret);
-		if (ret) {
-			if (count > ret) 
-				count = ret;
-			
-			pr_debug("count = %li\n", count);
-			if (copy_to_user(buf, 
-					 scull_pipe_device->buffer, 
-					 count)) {
+		if  (max_read > count) {
+			max_read = count;
+		}
+
+		pr_debug("max_read = %li\n", max_read);
+		if (max_read) {
+			if (copy_to_user(buf,
+					 scull_pipe_device->buffer,
+					 max_read)) {
 				pr_debug("Couldn't copy to user\n");
 				return -1;
 			}
 
-			scull_pipe_device->rp += count;
-			delta = scull_pipe_device->rp -
-						scull_pipe_device->buf_end;
-			if (delta > 0) {
-				scull_pipe_device->rp = 
-					scull_pipe_device->buf_end - 1;
+			scull_pipe_device->rp += max_read;
+			if (scull_pipe_device->rp == scull_pipe_device->buf_end) {
+				scull_pipe_device->rp = scull_pipe_device->buffer;
 			}
-			pr_debug("rp = %p\n", scull_pipe_device->rp);
-			count = 0;
+
+			count -= max_read;
+			scull_pipe_device->rp += max_read;
+			pr_debug("rp new = %p\n", rp);
 			up(&scull_pipe_device->sem);
 		} else {
 			up(&scull_pipe_device->sem);
 			count = 0;
 		}
+
+		pr_debug("count = %li\n", count);
 	}
+
 	return count;
 }
 
@@ -145,10 +118,12 @@ ssize_t scull_write(struct file *filp,
 		    size_t count, 
 		    loff_t *f_pos)
 {
+	char *wp = scull_pipe_device->wp;
+	char *rp = scull_pipe_device->rp;
+	char *end = scull_pipe_device->buf_end;
 	size_t max_count = 0;
 	size_t delta = 0;
 	size_t bytes_written = 0;
-	size_t tmp_count = 0;
 
 	while (count != 0) {
 		/* get the semaphore so you can make critical checks and 
@@ -159,35 +134,40 @@ ssize_t scull_write(struct file *filp,
 			/*FIXME */
 			return -ERESTARTSYS;
 		}
-		max_count = get_avail_memory();
-		if (max_count) {
-			if (count > max_count)
-				count = max_count;
 
-			if (scull_pipe_device->wp + count > scull_pipe_device->buf_end) {
-				count = scull_pipe_device->buf_end - 
-					(scull_pipe_device->wp + count);
+		if (wp == end && rp == scull_pipe_device->buffer) {
+			max_count = 0;
+		} else {
+			wp = scull_pipe_device->buffer;
+		}
+
+		if (wp >= rp) {
+			max_count = end - wp;
+		} else {
+			if (rp - wp == 1) /* Buffer full */
+				max_count = 0;
+			max_count = (rp - 1) - wp;
+		}
+		pr_debug("wp = %p\n", wp);
+		pr_debug("rp = %p\n", rp);
+		pr_debug("max_count = %li\n", max_count);
+
+		if (max_count) {
+			if (max_count > count) {
+				max_count = count;
 			}
+
 			if (copy_from_user(scull_pipe_device->buffer,
 					   buf,
-					   //tmp_count)) {
-					   count)) {
+					   max_count)) {
 				pr_debug("Couldn't write to the buffer.\n");
 				return -1;
 			}
 
-			/*count -= tmp_count;
-			bytes_written += tmp_count;*/
-			bytes_written += count;
-			count = 0;
+			count -= max_count;
+			bytes_written += max_count;
 			scull_pipe_device->wp += bytes_written;
-			delta = scull_pipe_device->wp - 
-						   scull_pipe_device->buf_end;
-			pr_debug("delta =  %li\n", delta);
-			if (delta > 0) {
-				scull_pipe_device->wp =
-					scull_pipe_device->buf_end - 1;
-			}
+			
 			up(&scull_pipe_device->sem);
 		} else {
 			/* release the semaphore, so other processes can empty
