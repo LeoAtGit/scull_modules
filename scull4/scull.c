@@ -75,34 +75,38 @@ ssize_t scull_read(struct file *filp,
 			max_read = end - rp;
 		}
 		
+		pr_debug("max_read before: %li\n", max_read);
 		if  (max_read > count) {
 			max_read = count;
 		}
+		pr_debug("max_read after: %li\n", max_read);
 
-		pr_debug("max_read = %li\n", max_read);
 		if (max_read) {
 			if (copy_to_user(buf,
-					 scull_pipe_device->buffer,
+					 scull_pipe_device->rp,
 					 max_read)) {
 				pr_debug("Couldn't copy to user\n");
 				return -1;
 			}
 
 			scull_pipe_device->rp += max_read;
-			if (scull_pipe_device->rp == scull_pipe_device->buf_end) {
+			if (scull_pipe_device->rp == scull_pipe_device->buf_end
+					&& scull_pipe_device->wp != 
+						scull_pipe_device->buf_end) {
 				scull_pipe_device->rp = scull_pipe_device->buffer;
 			}
 
 			count -= max_read;
-			scull_pipe_device->rp += max_read;
-			pr_debug("rp new = %p\n", rp);
 			up(&scull_pipe_device->sem);
 		} else {
 			up(&scull_pipe_device->sem);
 			count = 0;
 		}
 
-		pr_debug("count = %li\n", count);
+		pr_debug("buffer = %p\n", scull_pipe_device->buffer);
+		pr_debug("rp new = %p\n", scull_pipe_device->rp);
+		pr_debug("wp new = %p\n", scull_pipe_device->wp);
+		pr_debug("end    = %p\n\n", scull_pipe_device->buf_end);
 	}
 
 	return count;
@@ -118,9 +122,7 @@ ssize_t scull_write(struct file *filp,
 		    size_t count, 
 		    loff_t *f_pos)
 {
-	char *wp = scull_pipe_device->wp;
-	char *rp = scull_pipe_device->rp;
-	char *end = scull_pipe_device->buf_end;
+	char *wp, *rp, *end;
 	size_t max_count = 0;
 	size_t delta = 0;
 	size_t bytes_written = 0;
@@ -135,6 +137,10 @@ ssize_t scull_write(struct file *filp,
 			return -ERESTARTSYS;
 		}
 
+		wp = scull_pipe_device->wp;
+		rp = scull_pipe_device->rp;
+		end = scull_pipe_device->buf_end;
+
 		if (wp == end && rp == scull_pipe_device->buffer) {
 			max_count = 0;
 		} else {
@@ -148,16 +154,13 @@ ssize_t scull_write(struct file *filp,
 				max_count = 0;
 			max_count = (rp - 1) - wp;
 		}
-		pr_debug("wp = %p\n", wp);
-		pr_debug("rp = %p\n", rp);
-		pr_debug("max_count = %li\n", max_count);
 
 		if (max_count) {
 			if (max_count > count) {
 				max_count = count;
 			}
 
-			if (copy_from_user(scull_pipe_device->buffer,
+			if (copy_from_user(scull_pipe_device->wp,
 					   buf,
 					   max_count)) {
 				pr_debug("Couldn't write to the buffer.\n");
@@ -166,7 +169,7 @@ ssize_t scull_write(struct file *filp,
 
 			count -= max_count;
 			bytes_written += max_count;
-			scull_pipe_device->wp += bytes_written;
+			scull_pipe_device->wp += max_count;
 			
 			up(&scull_pipe_device->sem);
 		} else {
@@ -180,6 +183,10 @@ ssize_t scull_write(struct file *filp,
 			pr_debug("sleeping\n");
 			return -ERESTARTSYS;
 		}
+		pr_debug("buffer = %p\n", scull_pipe_device->buffer);
+		pr_debug("rp new = %p\n", scull_pipe_device->rp);
+		pr_debug("wp new = %p\n", scull_pipe_device->wp);
+		pr_debug("end    = %p\n\n", scull_pipe_device->buf_end);
 	}
 
 	return bytes_written; 
