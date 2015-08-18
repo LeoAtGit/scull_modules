@@ -19,6 +19,7 @@ int scull_major = 0;
 int scull_minor = 0;
 
 int device_num = 0;
+DECLARE_WAIT_QUEUE_HEAD(iq);
 
 /* struct scull_pipe
  * Is the main struct here, I/O will be read/written to the scull_pipe.buffer
@@ -28,7 +29,7 @@ typedef struct scull_pipe {
 	char *rp, *wp;			/* The read/write pointer shows where  
        					 * the buffer the next read/write will
 					 * be */
-	struct wait_queue_head_t *iq, *oq; /* The wait queue for input and 
+	/* struct wait_queue_head_t oq; */   /* The wait queue for input and 
 					 * output */
 
 	char buffer[BUF_SIZE];		/* Buffer is circular */
@@ -53,7 +54,6 @@ ssize_t scull_read(struct file *filp,
 {
 	char *wp, *rp, *end;
 	size_t max_read = 0;
-	size_t delta = 0;
 
 	while (count != 0) {
 		/* get the semaphore to check and change the pointers */
@@ -61,6 +61,12 @@ ssize_t scull_read(struct file *filp,
 			pr_debug("Couldn't get the semaphore, so we go to sleep\n");
 			/*FIXME*/
 			return -ERESTARTSYS;
+		}
+		
+		if (scull_pipe_device->rp == scull_pipe_device->buf_end
+	        		&& scull_pipe_device->wp 
+					!= scull_pipe_device->buf_end) {
+			scull_pipe_device->rp = scull_pipe_device->buffer;
 		}
 		
 		wp = scull_pipe_device->wp;
@@ -90,12 +96,6 @@ ssize_t scull_read(struct file *filp,
 			}
 
 			scull_pipe_device->rp += max_read;
-			if (scull_pipe_device->rp == scull_pipe_device->buf_end
-					&& scull_pipe_device->wp != 
-						scull_pipe_device->buf_end) {
-				scull_pipe_device->rp = scull_pipe_device->buffer;
-			}
-
 			count -= max_read;
 			up(&scull_pipe_device->sem);
 		} else {
@@ -124,7 +124,6 @@ ssize_t scull_write(struct file *filp,
 {
 	char *wp, *rp, *end;
 	size_t max_count = 0;
-	size_t delta = 0;
 	size_t bytes_written = 0;
 
 	while (count != 0) {
@@ -143,8 +142,10 @@ ssize_t scull_write(struct file *filp,
 
 		if (wp == end && rp == scull_pipe_device->buffer) {
 			max_count = 0;
-		} else {
-			wp = scull_pipe_device->buffer;
+			goto __max_count;
+		} else if (wp == end && rp != scull_pipe_device->buffer) {
+			scull_pipe_device->wp = scull_pipe_device->buffer;
+			wp = scull_pipe_device->wp;
 		}
 
 		if (wp >= rp) {
@@ -154,7 +155,7 @@ ssize_t scull_write(struct file *filp,
 				max_count = 0;
 			max_count = (rp - 1) - wp;
 		}
-
+__max_count:
 		if (max_count) {
 			if (max_count > count) {
 				max_count = count;
@@ -179,9 +180,8 @@ ssize_t scull_write(struct file *filp,
 			 */
 			up(&scull_pipe_device->sem);
 			/* go to sleep */
-			/*FIXME*/
 			pr_debug("sleeping\n");
-			return -ERESTARTSYS;
+			wait_event_interruptible(iq, true);
 		}
 		pr_debug("buffer = %p\n", scull_pipe_device->buffer);
 		pr_debug("rp new = %p\n", scull_pipe_device->rp);
@@ -207,16 +207,10 @@ int scull_init (void)
 		pr_debug("Couldn't malloc scull_pipe_device\n");
 		return -ENOMEM;
 	}
-	/*scull_pipe_device->buffer = kmalloc(sizeof(BUF_SIZE), GFP_KERNEL);
-	if (!scull_pipe_device->buffer) {
-		pr_debug("Couldn't malloc the buffer\n");
-		goto free;
-	}*/
 	scull_pipe_device->rp = scull_pipe_device->buffer;
 	scull_pipe_device->wp = scull_pipe_device->buffer;
 	scull_pipe_device->buf_end = scull_pipe_device->buffer + BUF_SIZE;
 	sema_init(&scull_pipe_device->sem, 1);
-	//init_MUTEX(&scull_pipe_device->sem);
 
 	err = alloc_chrdev_region(&device_num, scull_minor, 1, "scull");
 	if (err) {
@@ -232,13 +226,14 @@ int scull_init (void)
 	
 	err = cdev_add(scull_pipe_device->scull_cdev, device_num, 1);
 
+	//init_waitqueue_head(&scull_pipe_device->iq);
+//	init_waitqueue_head(&scull_pipe_device->oq);
+
 	pr_debug("Successfully loaded with Major: %d and Minor: %d\n", scull_major, scull_minor);
 
 	return 0;
 
 free:
-	/*if (scull_pipe_device->buffer)
-		kfree(scull_pipe_device->buffer);*/
 	if (scull_pipe_device)
 		kfree (scull_pipe_device);
 	return -1;
