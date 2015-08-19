@@ -6,4 +6,5 @@
 *.swp
 *.cmd
 .tmp_versions/
+scull4/nbproject/
 
