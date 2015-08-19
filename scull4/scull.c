@@ -78,7 +78,7 @@ ssize_t scull_write(struct file *filp,
 	size_t bytes_written = 0;
 	
 	/* debug */
-	wake_up_interruptible(&oq);
+	//wake_up_interruptible(&oq);
 
 	while (count != 0) {
 		/* get the semaphore so you can make critical checks and 
@@ -91,6 +91,7 @@ ssize_t scull_write(struct file *filp,
 		}
 		
 		max_count = get_max_write();
+		pr_debug("max_count: %li", max_count);
 
 		if (max_count) {
 			if (max_count > count) {
@@ -128,7 +129,7 @@ ssize_t scull_write(struct file *filp,
 	return bytes_written; 
 }
 
-long int get_max_read(void) 
+size_t get_max_read(void) 
 {
 	char *wp, *rp, *end;
 	
@@ -147,7 +148,7 @@ long int get_max_read(void)
 	}
 }
 
-long int get_max_write(void)
+size_t get_max_write(void)
 {
 	char *wp, *rp, *end;
 	

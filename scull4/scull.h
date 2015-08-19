@@ -40,8 +40,8 @@ ssize_t scull_read(struct file *filp, char *buf, size_t count, loff_t *f_pos);
 ssize_t scull_write(struct file *filp, const char *buf, size_t count, loff_t *f_pos);
 int scull_init (void);
 void scull_exit(void);
-long int get_max_read(void);
-long int get_max_write(void);
+size_t get_max_read(void);
+size_t get_max_write(void);
 
 /* The fops */
 struct file_operations scull_fops = {
