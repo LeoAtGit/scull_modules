@@ -89,6 +89,8 @@ ssize_t scull_write(struct file *filp,
 			/*FIXME */
 			return -ERESTARTSYS;
 		}
+		
+		max_count = get_max_write();
 
 		if (max_count) {
 			if (max_count > count) {
@@ -114,8 +116,8 @@ ssize_t scull_write(struct file *filp,
 			 */
 			up(&scull->sem);
 			/* go to sleep */
-			pr_debug("sleeping\n");
-			wait_event_interruptible(iq, true);
+			pr_debug("sleeping\n"); /* FIXME */
+			wait_event_interruptible(iq, get_max_write());
 		}
 		pr_debug("buffer = %p\n", scull->buffer);
 		pr_debug("rp new = %p\n", scull->rp);
